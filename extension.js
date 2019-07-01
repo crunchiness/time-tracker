@@ -1,33 +1,85 @@
-
-const St = imports.gi.St;
+const Clutter = imports.gi.Clutter;
+const Gio = imports.gi.Gio;
 const Main = imports.ui.main;
-const Tweener = imports.ui.tweener;
+const Mainloop = imports.mainloop;
+const Me = imports.misc.extensionUtils.getCurrentExtension();
+const Soup = imports.gi.Soup;
+const St = imports.gi.St;
 
-let text, button;
+const workingIcon = Gio.icon_new_for_string(`${Me.path}/icons/working-icon.png`);
+const restingIcon = Gio.icon_new_for_string(`${Me.path}/icons/resting-icon.png`);
+// const _somethingIsWrong = Gio.icon_new_for_string(`${Me.path}/icons/`);
 
-function _hideHello() {
-    Main.uiGroup.remove_actor(text);
-    text = null;
+const statusIcon = new St.Icon({gicon: restingIcon, style_class: 'my-icon'});
+const statusLabel = new St.Label({y_align: Clutter.ActorAlign.CENTER, text: '...'});
+
+let button, httpSession, startTime, topBox;
+let isWorking = true;
+let totalTime = 0;
+
+
+/**
+ * For sending a toggle message
+ *
+ * @param timestamp - unix timestamp in milliseconds
+ * @private
+ */
+function _sendMessage(timestamp) {
+    const request = Soup.Message.new('POST', 'http://localhost:8080');
+    const payload = {
+        toggleOn: isWorking,
+        timestamp: timestamp
+    };
+    const payloadStr = JSON.stringify(payload);
+    request.set_request ('application/json', Soup.MemoryUse.COPY, payloadStr, payloadStr.length);
+    httpSession.queue_message(request, (httpSession, message) => {
+        if (message.status_code !== 200) {
+            // TODO
+        }
+    });
 }
 
-function _showHello() {
-    if (!text) {
-        text = new St.Label({ style_class: 'helloworld-label', text: "Hello, world!" });
-        Main.uiGroup.add_actor(text);
+function _toggle() {
+    isWorking = !isWorking;
+    const now = Date.now();
+    if (isWorking) {
+        startTime = now;
+        statusIcon.gicon = workingIcon;
+    } else {
+        totalTime += (now - startTime) || 0;
+        statusIcon.gicon = restingIcon;
     }
+    _sendMessage(now);
+}
 
-    text.opacity = 255;
 
-    let monitor = Main.layoutManager.primaryMonitor;
+function zPad(n, width) {
+    const z = '0';
+    n = n + '';
+    return n.length >= width ? n : new Array(width - n.length + 1).join(z) + n;
+}
 
-    text.set_position(monitor.x + Math.floor(monitor.width / 2 - text.width / 2),
-                      monitor.y + Math.floor(monitor.height / 2 - text.height / 2));
+/**
+ * Responsible for displaying status label (time)
+ *
+ * @private
+ */
+function _refresh() {
+    let seconds;
+    if (isWorking) {
+        seconds = ((totalTime + (Date.now() - startTime)) / 1000).toFixed(0);
+    } else {
+        seconds = (totalTime / 1000).toFixed(0);
+    }
+    let minutes = Math.floor(seconds / 60);
+    let hours = Math.floor(minutes / 60);
 
-    Tweener.addTween(text,
-                     { opacity: 0,
-                       time: 2,
-                       transition: 'easeOutQuad',
-                       onComplete: _hideHello });
+    hours = zPad(hours, 2);
+    minutes = zPad(minutes % 60, 2);
+    seconds = zPad(seconds % 60, 2);
+
+    statusLabel.text = `${hours}:${minutes}:${seconds}`;
+    Mainloop.timeout_add(1000, _refresh);
 }
 
 function init() {
@@ -37,17 +89,24 @@ function init() {
                           x_fill: true,
                           y_fill: false,
                           track_hover: true });
-    let icon = new St.Icon({ icon_name: 'system-run-symbolic',
-                             style_class: 'system-status-icon' });
+    topBox = new St.BoxLayout();
+    topBox.add_actor(statusLabel);
+    topBox.add_actor(statusIcon);
+    button.set_child(topBox);
+    button.connect('button-press-event', _toggle);
 
-    button.set_child(icon);
-    button.connect('button-press-event', _showHello);
+    // Initialize HTTP session
+    httpSession = new Soup.SessionAsync();
+    Soup.Session.prototype.add_feature.call(httpSession, new Soup.ProxyResolverDefault());
 }
 
 function enable() {
+    _toggle();
+    Mainloop.timeout_add(1000, _refresh);
     Main.panel._rightBox.insert_child_at_index(button, 0);
 }
 
 function disable() {
+    // TODO: close HTTP session
     Main.panel._rightBox.remove_child(button);
 }
