@@ -14,33 +14,38 @@ const statusIcon = new St.Icon({gicon: restingIcon, style_class: 'my-icon'});
 const statusLabel = new St.Label({y_align: Clutter.ActorAlign.CENTER, text: '...'});
 
 let button, httpSession, startTime, topBox;
-let isWorking = true;
+let isWorking = false;
 let totalTime = 0;
 
 
 /**
- * For sending a toggle message
+ * For sending a message
  *
- * @param timestamp - unix timestamp in milliseconds
+ * @param payload
+ * @param [callback]
  * @private
  */
-function _sendMessage(timestamp) {
+function _sendMessage(payload, callback) {
     const request = Soup.Message.new('POST', 'http://localhost:8080');
-    const payload = {
-        toggleOn: isWorking,
-        timestamp: timestamp
-    };
     const payloadStr = JSON.stringify(payload);
     request.set_request ('application/json', Soup.MemoryUse.COPY, payloadStr, payloadStr.length);
     httpSession.queue_message(request, (httpSession, message) => {
-        if (message.status_code !== 200) {
+        if (message.status_code === 200) {
+            if (callback) {
+                callback(request.response_body.data);
+            }
+        } else {
             // TODO
         }
     });
 }
 
-function _toggle() {
-    isWorking = !isWorking;
+function _toggle(disable) {
+    if (disable === true) {
+        isWorking = false;
+    } else {
+        isWorking = !isWorking;
+    }
     const now = Date.now();
     if (isWorking) {
         startTime = now;
@@ -49,7 +54,11 @@ function _toggle() {
         totalTime += (now - startTime) || 0;
         statusIcon.gicon = restingIcon;
     }
-    _sendMessage(now);
+    _sendMessage({
+        type: 'ts',
+        toggleOn: isWorking,
+        timestamp: now
+    });
 }
 
 
@@ -100,13 +109,23 @@ function init() {
     Soup.Session.prototype.add_feature.call(httpSession, new Soup.ProxyResolverDefault());
 }
 
+function _getTotalTime() {
+    _sendMessage({
+        type: 'req',
+        timestamp: Date.now()
+    }, (response) => {
+        totalTime = JSON.parse(response).total;
+    });
+}
+
 function enable() {
-    _toggle();
+    _getTotalTime();
     Mainloop.timeout_add(1000, _refresh);
     Main.panel._rightBox.insert_child_at_index(button, 0);
 }
 
 function disable() {
+    _toggle(true);
     // TODO: close HTTP session
     Main.panel._rightBox.remove_child(button);
 }
