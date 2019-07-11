@@ -8,7 +8,7 @@ const St = imports.gi.St;
 
 const workingIcon = Gio.icon_new_for_string(`${Me.path}/icons/working-icon.png`);
 const restingIcon = Gio.icon_new_for_string(`${Me.path}/icons/resting-icon.png`);
-// const _somethingIsWrong = Gio.icon_new_for_string(`${Me.path}/icons/`);
+// const _somethingIsWrong = Gio.icon_new_for_string(`${Me.path}/icons/`); // TODO
 
 const statusIcon = new St.Icon({gicon: restingIcon, style_class: 'my-icon'});
 const statusLabel = new St.Label({y_align: Clutter.ActorAlign.CENTER, text: '...'});
@@ -56,7 +56,7 @@ function _toggle(disable) {
     }
     _sendMessage({
         type: 'ts',
-        toggleOn: isWorking,
+        toggle: isWorking,
         timestamp: now
     });
 }
@@ -76,9 +76,9 @@ function zPad(n, width) {
 function _refresh() {
     let seconds;
     if (isWorking) {
-        seconds = ((totalTime + (Date.now() - startTime)) / 1000).toFixed(0);
+        seconds = Math.floor((totalTime + (Date.now() - startTime)) / 1000);
     } else {
-        seconds = (totalTime / 1000).toFixed(0);
+        seconds = Math.floor(totalTime / 1000);
     }
     let minutes = Math.floor(seconds / 60);
     let hours = Math.floor(minutes / 60);
@@ -119,7 +119,7 @@ function _getTotalTime() {
 }
 
 function enable() {
-    _getTotalTime();
+    Mainloop.timeout_add(10000, _getTotalTime); // wait for the server to load
     Mainloop.timeout_add(1000, _refresh);
     Main.panel._rightBox.insert_child_at_index(button, 0);
 }
